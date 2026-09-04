@@ -6,10 +6,13 @@ Rote records every step your agent took, including the ones that did not work. T
 that record and reports the failure and repair structure it can prove.
 
 ```bash
-rote play run https://play.modiqo.ai/rajdeepkushwaha/retry-ledger workspaces_root=auto
+rote play run https://play.modiqo.ai/rajdeepkushwaha/retry-ledger workspaces_root=demo repo=demo
 ```
 
-Zero credentials. Reads JSON only: it never executes anything and never modifies a
+That runs the bundled trajectories, so it works on a clean machine with nothing set up.
+For your own history use `workspaces_root=auto`.
+
+Zero credentials. Reads files only: it never executes anything and never modifies a
 workspace. `python3`, nothing else.
 
 ## Verdicts
@@ -17,10 +20,14 @@ workspace. `python3`, nothing else.
 | verdict | what is being claimed |
 |---|---|
 | `UNCHANGED_RETRY` | The identical command was run again and failed again. |
-| `REPAIRED_RETRY` | Something changed before it succeeded, and the argument that changed is named. |
+| `REPAIRED_RETRY` | Something changed before it succeeded. The argument that changed is named, **and so is whether that value already appears in your instruction files**. |
 | `UNRECOVERED` | It failed and no later run of the same program succeeded. |
 | `TRANSIENT` | The same argv succeeded later. **Not proof the work was identical** — a script at the same path may have been rewritten in between. |
 | `INDETERMINATE` | The attempts could not be paired. Not a claim that anything was fine. |
+
+Repeated failures of the same program are grouped into **one incident**. Five attempts at
+the same broken command are one problem, and listing them five times makes a small failure
+look like a large one.
 
 ## What it deliberately does not do
 
@@ -31,25 +38,40 @@ attribution and then says plainly:
 > attribution often surfaces product problems, not just technical ones."
 
 Deciding which step *caused* a cascade is a judgement the recorded evidence does not
-carry. What the evidence does carry is: this command failed, this later command differed
-in these arguments and succeeded, and it cost this much. That is what gets reported.
+carry. What the evidence carries is: this command failed this many times, this later
+command differed in these arguments and succeeded, that value is or is not written down,
+and it cost this much. That is what gets reported.
 
-## Two things that were wrong first
+## Was the lesson already written down?
+
+With `repo=`, each repair value is searched in `AGENTS.md`, `CLAUDE.md`, `.cursorrules`,
+`CONTRIBUTING.md` and `README.md`:
+
+```
+REPAIRED_RETRY  demo-wrong-directory @1 npm  — argv 1 -> 3, adding --prefix apps/api
+  npm error Could not read package.json: ENOENT
+  **not written down** in any instruction file that was checked
+```
+
+Whether a string appears in a file is a fact. Whether the agent *should* have known it is
+not, so that is never asserted.
+
+## Four things that were wrong first
 
 **Pairing on request method.** Every process step in rote shares one method, `EXEC`, so
-"a later EXEC succeeded" pairs completely unrelated commands. The first version did that
-and produced confident nonsense. Attempts are paired on program and argv.
+"a later EXEC succeeded" pairs completely unrelated commands.
 
-**Rote's per-run temporary directories.** A play is unpacked into a fresh `/tmp/.tmpXXXXXX`
-on every run, so the same command never has byte-identical argv twice. Before those are
-collapsed, *every* pair looks like a repair and the verdict means nothing.
+**Rote's per-run temporary directories.** A play is unpacked into a fresh
+`/tmp/.tmpXXXXXX` every run, so the same command never has byte-identical argv twice.
+Before those are collapsed, *every* pair looks like a repair.
 
-## Scale
+**Grouping hid the thing it was meant to show.** Once repeated failures were grouped into
+one incident, three identical `pytest` attempts had no later failure to point at and came
+out as `UNRECOVERED`. The repetition *is* the finding.
 
-`scan` emits only the failed attempts and the later runs of the same program, never the
-whole trajectory. Emitting everything produced a 185 KB payload on one ordinary machine,
-which exceeds both argv limits and the 64 KiB ceiling on a step's captured stdout. The
-compact form is 9.7 KB for the same history.
+**Payload size.** Emitting every response produced 185 KB on one ordinary machine, past
+both argv limits and the 64 KiB ceiling on a step's captured stdout. Emitting only the
+failures and their pairing candidates is 9.7 KB for the same history.
 
 ## Licence
 

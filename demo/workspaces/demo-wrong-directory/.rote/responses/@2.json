@@ -1,0 +1,43 @@
+{
+ "id": "@2",
+ "timestamp": "2026-09-04T03:00:00.000000Z",
+ "request": {
+  "method": "EXEC",
+  "url": "process://local/npm",
+  "headers": {},
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "headers": {},
+  "body": {
+   "schema_version": 1,
+   "kind": "process.exec",
+   "invocation": {
+    "kind": "direct_argv",
+    "program": "npm",
+    "args": [
+     "--prefix",
+     "apps/api",
+     "test"
+    ]
+   },
+   "status": {
+    "exit": {
+     "kind": "code",
+     "code": 0
+    }
+   },
+   "stderr": {
+    "text": ""
+   }
+  },
+  "duration_ms": 8400
+ },
+ "auth_source": "local-process",
+ "tokens": {
+  "request_tokens": 0,
+  "response_tokens": 260,
+  "total_tokens": 260
+ }
+}

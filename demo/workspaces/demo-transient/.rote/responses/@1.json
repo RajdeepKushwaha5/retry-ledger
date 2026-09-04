@@ -1,0 +1,42 @@
+{
+ "id": "@1",
+ "timestamp": "2026-09-04T02:00:00.000000Z",
+ "request": {
+  "method": "EXEC",
+  "url": "process://local/curl",
+  "headers": {},
+  "body": null
+ },
+ "response": {
+  "status": 500,
+  "headers": {},
+  "body": {
+   "schema_version": 1,
+   "kind": "process.exec",
+   "invocation": {
+    "kind": "direct_argv",
+    "program": "curl",
+    "args": [
+     "-fsS",
+     "https://registry.example/api"
+    ]
+   },
+   "status": {
+    "exit": {
+     "kind": "code",
+     "code": 1
+    }
+   },
+   "stderr": {
+    "text": "curl: (28) Operation timed out after 30000 milliseconds"
+   }
+  },
+  "duration_ms": 30000
+ },
+ "auth_source": "local-process",
+ "tokens": {
+  "request_tokens": 0,
+  "response_tokens": 120,
+  "total_tokens": 120
+ }
+}

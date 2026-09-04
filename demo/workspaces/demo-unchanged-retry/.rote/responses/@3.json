@@ -1,0 +1,42 @@
+{
+ "id": "@3",
+ "timestamp": "2026-09-04T04:00:00.000000Z",
+ "request": {
+  "method": "EXEC",
+  "url": "process://local/pytest",
+  "headers": {},
+  "body": null
+ },
+ "response": {
+  "status": 500,
+  "headers": {},
+  "body": {
+   "schema_version": 1,
+   "kind": "process.exec",
+   "invocation": {
+    "kind": "direct_argv",
+    "program": "pytest",
+    "args": [
+     "-q",
+     "tests/"
+    ]
+   },
+   "status": {
+    "exit": {
+     "kind": "code",
+     "code": 1
+    }
+   },
+   "stderr": {
+    "text": "ImportError: No module named 'httpx'"
+   }
+  },
+  "duration_ms": 1510
+ },
+ "auth_source": "local-process",
+ "tokens": {
+  "request_tokens": 0,
+  "response_tokens": 300,
+  "total_tokens": 300
+ }
+}
