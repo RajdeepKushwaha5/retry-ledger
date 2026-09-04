@@ -115,7 +115,11 @@ def scan(root, only=None, repo=None):
         progs = {f["program"] for f in fails if f["program"]}
         cands = [{"n": r["n"], "program": r["program"], "args": r["args"], "status": r["status"]}
                  for r in rows if r["program"] in progs]
-        out[ws] = {"failures": fails, "candidates": cands}
+        # the prefix boundary is the last step that worked before the first failure;
+        # that is an ordering fact, not a claim about what caused anything
+        oks = [r["n"] for r in rows if r["status"] == 200]
+        out[ws] = {"failures": fails, "candidates": cands, "successes": oks,
+                   "first_failure": fails[0]["n"] if fails else None}
 
     instr = read_instructions(repo)
     return {"root": root, "workspaces": out, "unreadable": unreadable,
@@ -168,6 +172,8 @@ def classify(data):
 
     for ws, blob in (data.get("workspaces") or {}).items():
         cands = blob.get("candidates") or []
+        oks = blob.get("successes") or []
+        first_failure = blob.get("first_failure")
         fails = sorted(blob.get("failures") or [], key=lambda f: f["n"])
 
         # group consecutive failures of the same program into one incident
@@ -227,8 +233,32 @@ def classify(data):
                     detail = "no later run of %s succeeded in this workspace" % first.get("program")
                     partner = None
 
+            # Regression prefix. Everything here is recorded, never inferred: the freeze
+            # point is the last step that succeeded before this incident, the known-bad
+            # action is the argv that failed, and a known-good action is only stated when
+            # a later run actually succeeded. Where nothing succeeded, that is said.
+            before = [n for n in oks if n < first["n"]]
+            good = None
+            if verdict in ("REPAIRED_RETRY", "TRANSIENT") and partner is not None:
+                match = [c for c in cands if c["n"] == partner]
+                if match:
+                    good = match[0]["args"]
+            regression = {
+                "freeze_after": max(before) if before else None,
+                # normalised for display too: a regression spec that names a dead
+                # per-run temp directory is not something anyone can act on
+                "known_bad": [first.get("program")] + normalise((first.get("args") or [])[:6]),
+                "known_good": ([first.get("program")] + normalise(good[:6])) if good else None,
+                "known_good_recorded_at": partner if good else None,
+                "note": ("no later run succeeded, so only the action to avoid is known"
+                         if good is None else
+                         "the known-good action is the argv rote recorded succeeding"),
+            }
+
             incidents.append({
                 "workspace": ws,
+                "is_first_failure_in_workspace": first["n"] == first_failure,
+                "regression": regression,
                 "first_response": first["n"],
                 "attempts": len(g["attempts"]),
                 "responses": [a["n"] for a in g["attempts"]][:10],
@@ -285,6 +315,8 @@ def main():
         "root": data.get("root"),
         "repo": data.get("repo", ""),
         "instructions_checked": sorted((data.get("instructions") or {}).keys()),
+        "first_failures": {ws: b.get("first_failure")
+                           for ws, b in (data.get("workspaces") or {}).items()},
         "workspaces_with_failures": len(data.get("workspaces") or {}),
         "responses_scanned": data.get("responses_scanned", 0),
         "unreadable": data.get("unreadable", []),

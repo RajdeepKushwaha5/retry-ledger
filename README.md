@@ -29,6 +29,25 @@ Repeated failures of the same program are grouped into **one incident**. Five at
 the same broken command are one problem, and listing them five times makes a small failure
 look like a large one.
 
+## Regression prefix
+
+Every incident carries one, and every field in it was recorded rather than inferred:
+
+```
+regression prefix:
+    freeze      : after @1
+    known bad   : python3 <run-tmp>/resources/audit_dir.py .../fixtures/does_not_exist
+    known good  : python3 <run-tmp>/resources/audit_dir.py /tmp/tmp.yUr6uTrKiX   (recorded at @3)
+```
+
+`freeze` is the last step that succeeded before the incident. `known bad` is the argv that
+failed. `known good` is stated **only** when a later run actually succeeded; where nothing
+did, it says so instead of guessing. Rote's per-run temporary directories are collapsed to
+`<run-tmp>` so the spec shows the real difference rather than a dead path.
+
+The earliest failure in a workspace is marked as such. That is an ordering fact from the
+recorded timestamps, and it is labelled as one: *"an ordering fact, not a cause."*
+
 ## What it deliberately does not do
 
 It does **not** name a root cause. *AI Agents in Depth* §7.5.2 describes failure
@@ -56,7 +75,7 @@ REPAIRED_RETRY  demo-wrong-directory @1 npm  — argv 1 -> 3, adding --prefix ap
 Whether a string appears in a file is a fact. Whether the agent *should* have known it is
 not, so that is never asserted.
 
-## Four things that were wrong first
+## Five things that were wrong first
 
 **Pairing on request method.** Every process step in rote shares one method, `EXEC`, so
 "a later EXEC succeeded" pairs completely unrelated commands.
@@ -68,6 +87,10 @@ Before those are collapsed, *every* pair looks like a repair.
 **Grouping hid the thing it was meant to show.** Once repeated failures were grouped into
 one incident, three identical `pytest` attempts had no later failure to point at and came
 out as `UNRECOVERED`. The repetition *is* the finding.
+
+**A regression spec full of dead paths.** The first version normalised rote's per-run
+temp directories when *comparing* argv but printed them raw, so the spec named a
+`/tmp/.tmpIUxa3K` that no longer exists and nobody could act on.
 
 **Payload size.** Emitting every response produced 185 KB on one ordinary machine, past
 both argv limits and the 64 KiB ceiling on a step's captured stdout. Emitting only the
