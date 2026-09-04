@@ -287,6 +287,9 @@ def main():
     # the caller should not have to spell out a home path, and a literal one in the
     # manifest would not be portable to anyone else's machine
     here = os.path.dirname(os.path.abspath(__file__))
+    if raw not in ("demo", "auto", "", "-") and not os.path.isabs(raw):
+        sys.stderr.write("workspaces_root must be an ABSOLUTE path, or auto or demo. Got: " + raw + chr(10) + "A step runs inside rote's own workspace, not the directory you were standing in, so a relative path silently scans the wrong tree. There is no correct fallback: the step cannot see your shell directory." + chr(10))
+        sys.exit(2)
     if raw == "demo":
         root = os.path.join(here, "demo", "workspaces")
     else:
