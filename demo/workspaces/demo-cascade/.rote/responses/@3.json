@@ -1,0 +1,42 @@
+{
+ "id": "@3",
+ "timestamp": "2026-09-04T06:00:00.000000Z",
+ "request": {
+  "method": "EXEC",
+  "url": "process://local/alembic",
+  "headers": {},
+  "body": null
+ },
+ "response": {
+  "status": 500,
+  "headers": {},
+  "body": {
+   "schema_version": 1,
+   "kind": "process.exec",
+   "invocation": {
+    "kind": "direct_argv",
+    "program": "alembic",
+    "args": [
+     "upgrade",
+     "head"
+    ]
+   },
+   "status": {
+    "exit": {
+     "kind": "code",
+     "code": 1
+    }
+   },
+   "stderr": {
+    "text": "sqlalchemy.exc.OperationalError: could not connect to server on port 5432"
+   }
+  },
+  "duration_ms": 1900
+ },
+ "auth_source": "local-process",
+ "tokens": {
+  "request_tokens": 0,
+  "response_tokens": 220,
+  "total_tokens": 220
+ }
+}

@@ -45,8 +45,13 @@ failed. `known good` is stated **only** when a later run actually succeeded; whe
 did, it says so instead of guessing. Rote's per-run temporary directories are collapsed to
 `<run-tmp>` so the spec shows the real difference rather than a dead path.
 
+Where nothing was recorded at all the spec says `no invocation recorded` rather than
+printing an empty field.
+
 The earliest failure in a workspace is marked as such. That is an ordering fact from the
-recorded timestamps, and it is labelled as one: *"an ordering fact, not a cause."*
+recorded timestamps, and it is labelled as one: *"an ordering fact, not a cause."* It is
+only printed where it distinguishes something. In a workspace with a single incident,
+"earliest" and "only" are the same thing, and saying it there is noise.
 
 ## What it deliberately does not do
 
@@ -75,7 +80,7 @@ REPAIRED_RETRY  demo-wrong-directory @1 npm  — argv 1 -> 3, adding --prefix ap
 Whether a string appears in a file is a fact. Whether the agent *should* have known it is
 not, so that is never asserted.
 
-## Five things that were wrong first
+## Six things that were wrong first
 
 **Pairing on request method.** Every process step in rote shares one method, `EXEC`, so
 "a later EXEC succeeded" pairs completely unrelated commands.
@@ -91,6 +96,13 @@ out as `UNRECOVERED`. The repetition *is* the finding.
 **A regression spec full of dead paths.** The first version normalised rote's per-run
 temp directories when *comparing* argv but printed them raw, so the spec named a
 `/tmp/.tmpIUxa3K` that no longer exists and nobody could act on.
+
+**A feature the demo could not show.** Once the ordering marker was suppressed in
+single-incident workspaces, it stopped appearing anywhere: neither the bundled
+trajectories nor the real history on this machine had a workspace with two separate
+incidents. Nor did anything demonstrate a repair that *was* already written down. Both
+paths were correct and both were invisible, which for someone evaluating the play is the
+same as absent. `demo-cascade` exists to exercise them.
 
 **Payload size.** Emitting every response produced 185 KB on one ordinary machine, past
 both argv limits and the 64 KiB ceiling on a step's captured stdout. Emitting only the
