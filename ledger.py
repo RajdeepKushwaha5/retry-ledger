@@ -19,13 +19,29 @@ on everything it read stops working the moment a machine has real history.
 
 Never executes anything and never modifies a workspace: it opens files and reads them.
 """
-import json, os, re, sys
+import hashlib, json, os, re, sys
 
 sys.dont_write_bytecode = True
 MAX_WS = 200
 MAX_RESP = 5000
+ARG_CHARS = 220      # per argv element kept for display; identity uses the full value
+MAX_ARGV = 40        # argv elements kept for display
+BUDGET = 56000       # scan payload ceiling, under rote's 65536 with room for the wrapper
+ELIDED = "<...>"     # marks a value this play shortened, so it is never read as the value
+DIGEST = 12          # hex chars of the argv digest; 48 bits over a few hundred commands
+SHOW_DIFFS = 3       # argv differences rendered; any beyond this are counted, not dropped
 INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md", ".cursorrules", "CONTRIBUTING.md", "README.md")
-EPHEMERAL = re.compile(r"/tmp/\.tmp[A-Za-z0-9]{6,}")
+# A run temp directory is ".tmp" plus random characters, and it is NOT always under
+# /tmp: macOS puts it at /private/var/folders/<x>/<y>/T/.tmpXXXXXX. Anchoring on
+# /tmp made this an identity function on macOS, where every pair then looked like a
+# repair. Match the whole path prefix ending in the temp directory, anywhere.
+# Built from chr(92) rather than written as an escape. The first attempt at this fix
+# shipped "[/\\]\\.tmp..." as source, which Python reads as a single character
+# class -- \\] inside a class is an escaped bracket, so the class ran on and {6,}
+# applied to it. That pattern matched every argv element, which would have made every
+# retry look identical. There is no escape in this source line to be flattened.
+_BS = chr(92)
+EPHEMERAL = re.compile("[^ ]*[/" + _BS + _BS + "]" + _BS + ".tmp[A-Za-z0-9]{6,}")
 
 
 def normalise(args):
@@ -33,6 +49,25 @@ def normalise(args):
     never has byte-identical argv twice. Comparing raw argv reports a repair on every
     single pair. Collapse those paths before comparing; nothing else is rewritten."""
     return [EPHEMERAL.sub("<run-tmp>", a) for a in args]
+
+
+def shorten(a):
+    """Display form of one argv element. An agent that runs a script through `bash -lc`
+    puts the whole script in argv, and one such record measured 75,523 bytes against a
+    65536 byte ceiling. The marker is deliberate: a shortened value must never be read
+    back as the value itself."""
+    return a if len(a) <= ARG_CHARS else a[:ARG_CHARS] + ELIDED
+
+
+def argv_key(program, args):
+    """Identity of a command, computed on the FULL argv before any shortening. Comparing
+    shortened argv would call two different long scripts the same command and report a
+    repeat that never happened."""
+    if not program:
+        return None
+    joined = chr(0).join(normalise(args))
+    h = hashlib.sha1(joined.encode("utf-8", "replace")).hexdigest()[:DIGEST]
+    return program + ":" + h
 
 
 def load_response(path):
@@ -45,6 +80,7 @@ def load_response(path):
     body = resp.get("body") if isinstance(resp.get("body"), dict) else {}
     inv = body.get("invocation") or {}
     toks = d.get("tokens") or {}
+    full_args = [str(a) for a in (inv.get("args") or [])]
     n = re.sub(r"\D", "", str(d.get("id", "")))
     return {
         "n": int(n) if n else 0,
@@ -52,7 +88,10 @@ def load_response(path):
         "duration_ms": resp.get("duration_ms") or 0,
         "tokens": toks.get("total_tokens") or 0,
         "program": inv.get("program"),
-        "args": [str(a) for a in (inv.get("args") or [])],
+        "args": [shorten(str(a)) for a in full_args[:MAX_ARGV]],
+        "args_key": argv_key(inv.get("program"), full_args),
+        "args_elided": (True if (len(full_args) > MAX_ARGV
+                                 or any(len(a) > ARG_CHARS for a in full_args)) else None),
         "stderr": (((body.get("stderr") or {}).get("text")) or "")[:300],
         "method": req.get("method"),
     }
@@ -113,25 +152,78 @@ def scan(root, only=None, repo=None):
         if not fails:
             continue
         progs = {f["program"] for f in fails if f["program"]}
-        cands = [{"n": r["n"], "program": r["program"], "args": r["args"], "status": r["status"]}
-                 for r in rows if r["program"] in progs]
+        # Every response sharing a program with a failure, kept whole. Dropping one can
+        # remove the successful run that repaired a failure, and the incident then reads
+        # UNRECOVERED -- a claim the evidence does not support. Size is bought below, by
+        # shortening what each record displays, never by thinning this list.
+        # Pairing only ever looks forward, at candidates after the last attempt of an
+        # incident, and no incident starts before the workspace's first failure. So a
+        # candidate at or before that point can never be compared against anything, and
+        # a workspace with no failures has no incidents to compare at all. Dropping those
+        # is free; dropping a candidate AFTER a failure would not be, because it can be
+        # the run that repaired it, and losing it reports a false UNRECOVERED.
+        floor = fails[0]["n"] if fails else None
+        cands = []
+        for r in rows:
+            if floor is None or r["program"] not in progs or r["n"] <= floor:
+                continue
+            c = {"n": r["n"], "program": r["program"], "args": r["args"],
+                 "args_key": r["args_key"], "status": r["status"]}
+            if r["args_elided"]:
+                c["args_elided"] = True
+            cands.append(c)
         # the prefix boundary is the last step that worked before the first failure;
         # that is an ordering fact, not a claim about what caused anything
         oks = [r["n"] for r in rows if r["status"] == 200]
         out[ws] = {"failures": fails, "candidates": cands, "successes": oks,
                    "first_failure": fails[0]["n"] if fails else None}
 
+    # Last resort. Everything above shortens what a record displays; if the payload is
+    # still over the ceiling, whole workspaces are dropped and named. A workspace that
+    # survives is reported completely, so no verdict inside one is ever affected by size.
+    omitted = []
+    order = sorted(out, key=lambda w: (len(out[w]["failures"]) > 0,
+                                       -len(json.dumps(out[w]))))
+    while len(json.dumps(out)) > BUDGET and len(out) > 1:
+        drop = order.pop(0)
+        del out[drop]
+        omitted.append(drop)
+
     instr = read_instructions(repo)
     return {"root": root, "workspaces": out, "unreadable": unreadable,
             "responses_scanned": scanned, "truncated_workspaces": len(names) > MAX_WS,
+            "omitted_workspaces": omitted,
             "repo": repo or "", "instructions": instr}
 
 
-def key_of(program, args):
+# For these, the program name says nothing about which command ran: every Python script
+# on the machine is "python3". The script in argv is part of the command's identity.
+INTERPRETERS = ("python", "python3", "node", "nodejs", "ruby", "perl", "bash", "sh",
+                "zsh", "deno", "bun")
+
+
+def script_of(row):
+    """The script an interpreter was asked to run, or None when the program is not an
+    interpreter. Used to keep two unrelated scripts from being paired as a failure and its
+    repair merely because both were launched by python3."""
+    prog = os.path.basename(str(row.get("program") or ""))
+    if prog not in INTERPRETERS:
+        return None
+    for a in normalise(row.get("args") or []):
+        if a.startswith("-"):
+            continue
+        return os.path.basename(a.rstrip("/"))
+    return None
+
+
+def key_of(row):
     """Two attempts are the same command when the program and its argv match. Matching on
     the request method alone would pair unrelated commands, because every process step
-    shares one method."""
-    return None if not program else (program, tuple(normalise(args)))
+    shares one method. Takes the whole row so identity reads the digest of the full argv
+    rather than the shortened display copy."""
+    if not row.get("program"):
+        return None
+    return row.get("args_key") or argv_key(row["program"], row.get("args") or [])
 
 
 def arg_delta(a, b):
@@ -139,13 +231,19 @@ def arg_delta(a, b):
     if len(a) != len(b):
         added = [x for x in b if x not in a]
         if added:
-            return ("argv %d -> %d, adding %s"
-                    % (len(a), len(b), " ".join(x[:40] for x in added[:3])), added[0])
+            more = ("" if len(added) <= SHOW_DIFFS
+                    else " (and %d more not shown)" % (len(added) - SHOW_DIFFS))
+            return ("argv %d -> %d, adding %s%s"
+                    % (len(a), len(b),
+                       " ".join(x[:40] for x in added[:SHOW_DIFFS]), more), added[0])
         return "argv length %d -> %d" % (len(a), len(b)), None
     diffs = [(x, y) for x, y in zip(a, b) if x != y]
     if not diffs:
         return "no argv difference", None
-    text = "; ".join("%s -> %s" % (x[:70], y[:70]) for x, y in diffs[:3])
+    text = "; ".join("%s -> %s" % (x[:70], y[:70]) for x, y in diffs[:SHOW_DIFFS])
+    if len(diffs) > SHOW_DIFFS:
+        # an unannounced cap reads as "the command changed in three ways"
+        text += " (and %d more difference(s) not shown)" % (len(diffs) - SHOW_DIFFS)
     return text, diffs[0][1]
 
 
@@ -156,6 +254,10 @@ def documented(value, instructions):
         return "not-checked", ""
     if not value:
         return "no-repair-value", ""
+    if ELIDED in value:
+        # This play shortened the value, so a failed search would say more about the
+        # shortening than about the instruction file. Decline instead of claiming.
+        return "value-elided", ""
     needle = os.path.basename(value.rstrip("/")) or value
     if len(needle) < 3:
         return "too-short-to-search", ""
@@ -176,13 +278,17 @@ def classify(data):
         first_failure = blob.get("first_failure")
         fails = sorted(blob.get("failures") or [], key=lambda f: f["n"])
 
-        # group consecutive failures of the same program into one incident
+        # Group consecutive failures of the same command into one incident. Same
+        # program, and for an interpreter the same script, for the same reason pairing
+        # needs it: otherwise two different failing Python scripts merge into one
+        # incident and the count of distinct problems comes out wrong.
         groups = []
         for f in fails:
-            if groups and groups[-1]["program"] == f.get("program"):
+            sig = (f.get("program"), script_of(f))
+            if groups and groups[-1]["sig"] == sig:
                 groups[-1]["attempts"].append(f)
             else:
-                groups.append({"program": f.get("program"), "attempts": [f]})
+                groups.append({"sig": sig, "program": f.get("program"), "attempts": [f]})
 
         for g in groups:
             first = g["attempts"][0]
@@ -192,9 +298,15 @@ def classify(data):
                 totals["wasted_ms"] += a.get("duration_ms") or 0
                 totals["wasted_tokens"] += a.get("tokens") or 0
 
-            k = key_of(first.get("program"), first.get("args") or [])
+            k = key_of(first)
             last_n = g["attempts"][-1]["n"]
-            later = [c for c in cands if c["n"] > last_n and c["program"] == first.get("program")]
+            # Same program, and for an interpreter the same script: python3 running
+            # selfcheck.py is not a later run of python3 running blast.py, and pairing
+            # them reported a repair that never happened.
+            want_script = script_of(first)
+            later = [c for c in cands
+                     if c["n"] > last_n and c["program"] == first.get("program")
+                     and script_of(c) == want_script]
             repair_value, doc, doc_where = None, "not-checked", ""
 
             if k is None:
@@ -202,10 +314,10 @@ def classify(data):
                 detail = "no recorded invocation to compare; attempts cannot be paired"
                 partner = None
             else:
-                exact = [c for c in later if key_of(c["program"], c["args"]) == k]
+                exact = [c for c in later if key_of(c) == k]
                 exact_ok = [c for c in exact if c["status"] == 200]
                 repaired = [c for c in later
-                            if key_of(c["program"], c["args"]) != k and c["status"] == 200]
+                            if key_of(c) != k and c["status"] == 200]
                 if exact_ok:
                     verdict = "TRANSIENT"
                     detail = ("the identical argv succeeded later; if the command reads a "
@@ -222,7 +334,7 @@ def classify(data):
                     detail = "the identical command was run again and failed again"
                     partner = exact[0]["n"]
                 elif len(g["attempts"]) > 1 and all(
-                        key_of(a.get("program"), a.get("args") or []) == k
+                        key_of(a) == k
                         for a in g["attempts"]):
                     verdict = "UNCHANGED_RETRY"
                     detail = ("the identical command was run %d times and failed every time"
@@ -324,6 +436,8 @@ def main():
         "responses_scanned": data.get("responses_scanned", 0),
         "unreadable": data.get("unreadable", []),
         "truncated_workspaces": data.get("truncated_workspaces", False),
+        # dropped by the payload budget, not absent from the history
+        "omitted_workspaces": data.get("omitted_workspaces") or [],
         "totals": totals,
         "incidents": sorted(incidents, key=lambda i: (i["workspace"], i["first_response"])),
     }, separators=(",", ":")))

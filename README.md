@@ -104,9 +104,25 @@ incidents. Nor did anything demonstrate a repair that *was* already written down
 paths were correct and both were invisible, which for someone evaluating the play is the
 same as absent. `demo-cascade` exists to exercise them.
 
-**Payload size.** Emitting every response produced 185 KB on one ordinary machine, past
-both argv limits and the 64 KiB ceiling on a step's captured stdout. Emitting only the
-failures and their pairing candidates is 9.7 KB for the same history.
+**Payload size, and how this was got wrong twice.** Emitting every response produced
+185 KB on one ordinary machine, past both argv limits and the 64 KiB ceiling on a step's
+captured stdout. Emitting only the failures and their pairing candidates brought that to
+9.7 KB — and that number came from a small history. On a machine with real history the
+same code emitted **1,007,913 bytes**, and because the scan JSON is handed to the next step
+as an argument it died at `Argument list too long` before the 64 KiB preview ever applied.
+A reviewer running it on their own machine hit 2,392,794 bytes. Knowing a ceiling exists is
+not the same as budgeting for it.
+
+The second mistake was the first fix: capping the candidate list. Candidates were not the
+cost, and dropping one can remove the later run that repaired a failure, turning
+`REPAIRED_RETRY` into a false `UNRECOVERED`. **A size limit is not allowed to invent a
+claim.** What actually costs bytes is a single argv element — an agent running a script
+through `bash -lc` puts the whole script in argv, and one failure record measured 75,523
+bytes by itself. So each element is shortened *for display* and marked, while identity is a
+digest of the full argv, and the only candidates dropped are the ones no comparison can
+reach. 27 KB across the same ten workspaces, with every verdict verified identical to the
+previous version field by field. Where even that will not fit, whole workspaces are dropped
+and **named in the report**.
 
 ## Licence
 
