@@ -1,0 +1,44 @@
+{
+ "id": "@1",
+ "timestamp": "2026-09-04T02:00:00.000000Z",
+ "request": {
+  "method": "EXEC",
+  "url": "process://local/docker",
+  "headers": {},
+  "body": null
+ },
+ "response": {
+  "status": 500,
+  "headers": {},
+  "body": {
+   "schema_version": 1,
+   "kind": "process.exec",
+   "invocation": {
+    "kind": "direct_argv",
+    "program": "docker",
+    "args": [
+     "build",
+     "-t",
+     "app",
+     "."
+    ]
+   },
+   "status": {
+    "exit": {
+     "kind": "code",
+     "code": 1
+    }
+   },
+   "stderr": {
+    "text": "failed to solve: process /bin/sh -c pip install -r requirements.txt did not complete"
+   }
+  },
+  "duration_ms": 45000
+ },
+ "auth_source": "local-process",
+ "tokens": {
+  "request_tokens": 0,
+  "response_tokens": 900,
+  "total_tokens": 900
+ }
+}

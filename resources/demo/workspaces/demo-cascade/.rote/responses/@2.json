@@ -1,0 +1,42 @@
+{
+ "id": "@2",
+ "timestamp": "2026-09-04T05:00:00.000000Z",
+ "request": {
+  "method": "EXEC",
+  "url": "process://local/poetry",
+  "headers": {},
+  "body": null
+ },
+ "response": {
+  "status": 200,
+  "headers": {},
+  "body": {
+   "schema_version": 1,
+   "kind": "process.exec",
+   "invocation": {
+    "kind": "direct_argv",
+    "program": "poetry",
+    "args": [
+     "install",
+     "--no-root"
+    ]
+   },
+   "status": {
+    "exit": {
+     "kind": "code",
+     "code": 0
+    }
+   },
+   "stderr": {
+    "text": ""
+   }
+  },
+  "duration_ms": 24800
+ },
+ "auth_source": "local-process",
+ "tokens": {
+  "request_tokens": 0,
+  "response_tokens": 310,
+  "total_tokens": 310
+ }
+}

@@ -1,0 +1,41 @@
+{
+ "id": "@1",
+ "timestamp": "2026-09-04T04:00:00.000000Z",
+ "request": {
+  "method": "EXEC",
+  "url": "process://local/poetry",
+  "headers": {},
+  "body": null
+ },
+ "response": {
+  "status": 500,
+  "headers": {},
+  "body": {
+   "schema_version": 1,
+   "kind": "process.exec",
+   "invocation": {
+    "kind": "direct_argv",
+    "program": "poetry",
+    "args": [
+     "install"
+    ]
+   },
+   "status": {
+    "exit": {
+     "kind": "code",
+     "code": 1
+    }
+   },
+   "stderr": {
+    "text": "Poetry could not find a pyproject.toml file with a package named app"
+   }
+  },
+  "duration_ms": 11200
+ },
+ "auth_source": "local-process",
+ "tokens": {
+  "request_tokens": 0,
+  "response_tokens": 640,
+  "total_tokens": 640
+ }
+}
