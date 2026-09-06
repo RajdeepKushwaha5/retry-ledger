@@ -41,14 +41,25 @@ INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md", ".cursorrules", "CONTRIBUTING.md"
 # applied to it. That pattern matched every argv element, which would have made every
 # retry look identical. There is no escape in this source line to be flattened.
 _BS = chr(92)
-EPHEMERAL = re.compile("[^ ]*[/" + _BS + _BS + "]" + _BS + ".tmp[A-Za-z0-9]{6,}")
+# Anchored on the literal ".tmp" rather than a leading wildcard. The first version of
+# this began "[^ ]*", which made re.sub retry at every position of every argv element,
+# and one element here can be a 75 KB script: 81 of 82 seconds of an auto scan were
+# spent inside this one call. Nothing needs skipping over, because each argv element is
+# already a separate string, so the prefix is sliced off instead of matched.
+EPHEMERAL = re.compile("[/" + _BS + _BS + "]" + _BS + ".tmp[A-Za-z0-9]{6,}")
 
 
 def normalise(args):
     """rote unpacks a play into a fresh temp directory on every run, so the same command
     never has byte-identical argv twice. Comparing raw argv reports a repair on every
     single pair. Collapse those paths before comparing; nothing else is rewritten."""
-    return [EPHEMERAL.sub("<run-tmp>", a) for a in args]
+    out = []
+    for a in args:
+        m = EPHEMERAL.search(a)
+        # everything up to and including the run temp directory is the part that differs
+        # between runs; what follows it is the same command every time
+        out.append(("<run-tmp>" + a[m.end():]) if m else a)
+    return out
 
 
 def shorten(a):

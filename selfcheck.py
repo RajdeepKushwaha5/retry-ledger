@@ -20,7 +20,8 @@ is worse than no check at all:
 
     selfcheck.py  ->  JSON {passed, total, failures}
 """
-import json, os, subprocess, sys
+import json
+import os, os, subprocess, sys
 
 sys.dont_write_bytecode = True
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -240,6 +241,60 @@ def main():
             failures.append({"case": "budget:demo-payload-fits",
                              "detail": "the bundled scan emitted %d bytes against a %d "
                                        "byte budget" % (payload, ledger.BUDGET)})
+
+
+    # ---- the play must run with no arguments at all
+    #
+    # A reviewer pulled all nine and found three that did not: two declared required
+    # parameters and refused, and one defaulted to the reader's real history instead of
+    # the bundled example. No self-check looked at the frontmatter, so nothing caught it.
+    total += 1
+    try:
+        _mt = open(os.path.join(HERE, "..", "main.ts"), encoding="utf-8").read()
+        _params = _mt.split("* parameters:")[1].split("* metadata:")[0] if "* parameters:" in _mt else ""
+        _required = [ln for ln in _params.split(chr(10)) if "required: true" in ln]
+        if _required:
+            failures.append({
+                "case": "runs-bare:no-required-parameters",
+                "detail": "%d parameter(s) are declared required, so `rote play run "
+                          "<this>` refuses instead of showing the bundled example"
+                          % len(_required)})
+    except Exception as _e:
+        failures.append({"case": "runs-bare:no-required-parameters",
+                         "detail": "could not read the frontmatter: %s" % _e})
+
+    # ---- the temp-path normaliser has to stay linear
+    #
+    # It began with a greedy unanchored wildcard, so re.sub retried at every position of
+    # every argv element - and one element here can be a 75 KB script. 81 of 82 seconds
+    # of a real scan went into that one call, and a reviewer with 139 workspaces burned
+    # the whole step timeout. A timeout is not a wrong answer, so no other case here can
+    # see it.
+    total += 1
+    try:
+        import time as _time
+        sys.path.insert(0, HERE)
+        import ledger as _led
+        # One argv element with NO spaces in it, at rote's own 65536 byte truncation
+        # boundary, which is exactly the shape the recorded calls contain. Spaces are
+        # what made the first version of this case useless: the old pattern stopped at
+        # every space, so a string full of them never triggered the backtracking and the
+        # broken code passed the check. A single sub over this shape measured 13.8
+        # SECONDS on the real data.
+        _big = "x" * 65536
+        _t0 = _time.time()
+        for _ in range(3):
+            _led.normalise([_big])
+        _took = _time.time() - _t0
+        if _took > 2.0:
+            failures.append({
+                "case": "performance:normaliser-is-linear",
+                "detail": "3 passes over a %d character argument took %.1f s. The scan "
+                          "does this for every recorded call, so a machine with real "
+                          "history times out rather than answering" % (len(_big), _took)})
+    except Exception as _e:
+        failures.append({"case": "performance:normaliser-is-linear",
+                         "detail": "could not measure: %s" % _e})
 
     print(json.dumps({"passed": total - len(failures), "total": total,
                       "failures": failures[:10]}, separators=(",", ":")))
